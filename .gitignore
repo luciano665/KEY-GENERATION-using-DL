@@ -2,3 +2,5 @@
 .env
 *.png
 *.json
+*.txt
+*.xml

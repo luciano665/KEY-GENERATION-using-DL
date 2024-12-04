@@ -151,12 +151,16 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="cross
 
             # Testing phase
             log_file.write(f"\n--- Validation Results for Fold {fold + 1} ---\n")
+            person_representative_keys = []
             for person_idx in val_index:
                 person_segments, ground_truth_key = all_persons_data[person_idx]
 
                 # Predict keys for all segments
                 predictions = models[train_index[0]].predict(person_segments)
                 predicted_keys = (predictions > 0.5).astype(int)
+
+                # Select a representative key (e.g., the first segment's key)
+                person_representative_keys.append(predicted_keys[0])
 
                 # Check intra-person consistency
                 hamming_distances = [
@@ -179,12 +183,16 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="cross
                     f"Person {person_idx + 1} - Average Match Distance with Ground Truth: {avg_match_distance:.2f}\n"
                 )
 
+            # Inter-person Hamming distance
+            log_file.write(f"\n--- Inter-Person Hamming Distances (Fold {fold + 1}) ---\n")
+            num_keys = len(person_representative_keys)
+            for i in range(num_keys):
+                for j in range(i + 1, num_keys):
+                    distance = hamming(person_representative_keys[i], person_representative_keys[j]) * len(
+                        person_representative_keys[i])
+                    log_file.write(
+                        f"Hamming distance between Person {val_index[i]} and Person {val_index[j]}: {distance:.2f}\n"
+                    )
             log_file.write("\n")
 
     print(f"Cross-validation completed. Results saved to {log_file_path}")
-
-# Main Execution
-if __name__ == '__main__':
-    base_directory = '/Users\lrm00020\PycharmProjects\KEY-GENERATION-using-DL\segmented_ecg_data1'
-    keys_file = '/Users\lrm00020\PycharmProjects\KEY-GENERATION-using-DL\ground_keys\ANU.json'
-    train_and_test_prebuilt_keys(base_directory, keys_file)
