@@ -7,6 +7,11 @@ from tensorflow.keras.layers import Input, Dense, Conv1D, MaxPooling1D, GlobalAv
 from tensorflow.keras.optimizers import Adam
 from sklearn.model_selection import KFold
 from scipy.spatial.distance import hamming
+import tensorflow as tf
+
+# Set seeds for reproducibility if desired
+tf.random.set_seed(42)
+np.random.seed(42)
 
 # Function to load prebuilt ground keys
 def load_keys(file_path):
@@ -85,13 +90,14 @@ def build_key_prediction_model(input_dim, output_dim=256):
     return model
 
 # Train and test with the pre-built keys using cross-validation
-def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="cross_validation_log_with_prebuilt_keys.txt"):
+def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="cross_validation_log_with_prebuilt_keys_and_all_tests_ecg_data.txt"):
     """Train and test the model with pre-built ground truth keys using cross-validation."""
     max_length = 170
     prebuilt_keys = load_keys(keys_file)
     all_persons_data = []
 
     # Load data and associate with pre-built ground truth keys
+    # Each entry in all_persons_data: (segments_array, ground_truth_key)
     for person_dir in sorted(os.listdir(base_directory)):
         if not person_dir.startswith("Person_"):
             continue
@@ -125,6 +131,10 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="cross
 
     n_splits = 5
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+
+    # Dictionary to store representative keys across folds for each person
+    person_keys_across_folds = {i: [] for i in range(len(all_persons_data))}
+
     with open(log_file_path, 'w') as log_file:
         log_file.write("Cross-Validation Log with Pre-Built Keys\n")
         log_file.write("========================================\n\n")
@@ -132,22 +142,27 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="cross
         for fold, (train_index, val_index) in enumerate(kf.split(all_persons_data)):
             log_file.write(f"\n--- Fold {fold + 1} ---\n")
 
-            # Training phase
-            models = {}
+            # Combine all training data for this fold
+            X_train = []
+            Y_train = []
             for person_idx in train_index:
                 person_segments, ground_truth_key = all_persons_data[person_idx]
-                model = build_key_prediction_model(input_dim=max_length)
-
-                # Train the model
                 ground_truth_key_array = np.tile(ground_truth_key, (len(person_segments), 1))
-                model.fit(
-                    person_segments,
-                    ground_truth_key_array,
-                    epochs=10,
-                    batch_size=16,
-                    verbose=1
-                )
-                models[person_idx] = model
+                X_train.append(person_segments)
+                Y_train.append(ground_truth_key_array)
+
+            X_train = np.concatenate(X_train, axis=0)
+            Y_train = np.concatenate(Y_train, axis=0)
+
+            # Build and train a single model for this fold
+            model = build_key_prediction_model(input_dim=max_length)
+            model.fit(
+                X_train,
+                Y_train,
+                epochs=50,
+                batch_size=16,
+                verbose=1
+            )
 
             # Testing phase
             log_file.write(f"\n--- Validation Results for Fold {fold + 1} ---\n")
@@ -155,44 +170,63 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="cross
             for person_idx in val_index:
                 person_segments, ground_truth_key = all_persons_data[person_idx]
 
-                # Predict keys for all segments
-                predictions = models[train_index[0]].predict(person_segments)
-                predicted_keys = (predictions > 0.5).astype(int)
+                # Predict keys for all segments using the fold's model
+                predictions = model.predict(person_segments)
+                # Average predicted keys across all segments for this person
+                averaged_prediction = np.mean(predictions, axis=0)
+                representative_key = (averaged_prediction > 0.5).astype(int)
 
-                # Select a representative key (e.g., the first segment's key)
-                person_representative_keys.append(predicted_keys[0])
+                person_representative_keys.append(representative_key)
+                person_keys_across_folds[person_idx].append(representative_key)
 
-                # Check intra-person consistency
+                # Check intra-person consistency: Now irrelevant since we averaged,
+                # but we can still look at how each segment differs from the averaged key.
+                segmentwise_keys = (predictions > 0.5).astype(int)
                 hamming_distances = [
-                    hamming(predicted_keys[0], predicted_keys[i]) * len(predicted_keys[0])
-                    for i in range(1, len(predicted_keys))
+                    hamming(representative_key, segmentwise_keys[i]) * len(representative_key)
+                    for i in range(len(segmentwise_keys))
                 ]
-                avg_intra_distance = np.mean(hamming_distances)
+                avg_intra_distance = np.mean(hamming_distances) if len(hamming_distances) > 0 else 0.0
                 log_file.write(
-                    f"Person {person_idx + 1} - Average Intra-Person Hamming Distance: {avg_intra_distance:.2f}\n"
+                    f"Person {person_idx + 1} - Average Intra-Person Hamming Distance (vs rep. key): {avg_intra_distance:.2f}\n"
                 )
 
-                # Check if all keys match the ground truth key
+                # Check match with ground truth key
                 ground_truth_array = np.array(ground_truth_key)
-                match_with_ground_truth = [
-                    hamming(ground_truth_array, predicted_keys[i]) * len(ground_truth_array)
-                    for i in range(len(predicted_keys))
-                ]
-                avg_match_distance = np.mean(match_with_ground_truth)
+                # Compare representative key with ground truth
+                match_distance = hamming(ground_truth_array, representative_key) * len(ground_truth_array)
                 log_file.write(
-                    f"Person {person_idx + 1} - Average Match Distance with Ground Truth: {avg_match_distance:.2f}\n"
+                    f"Person {person_idx + 1} - Representative Key Distance with Ground Truth: {match_distance:.2f}\n"
                 )
 
-            # Inter-person Hamming distance
+            # Inter-person Hamming distance among persons in the validation set
             log_file.write(f"\n--- Inter-Person Hamming Distances (Fold {fold + 1}) ---\n")
             num_keys = len(person_representative_keys)
             for i in range(num_keys):
                 for j in range(i + 1, num_keys):
-                    distance = hamming(person_representative_keys[i], person_representative_keys[j]) * len(
-                        person_representative_keys[i])
+                    distance = hamming(person_representative_keys[i], person_representative_keys[j]) * len(person_representative_keys[i])
                     log_file.write(
-                        f"Hamming distance between Person {val_index[i]} and Person {val_index[j]}: {distance:.2f}\n"
+                        f"Hamming distance between Person {val_index[i]+1} and Person {val_index[j]+1}: {distance:.2f}\n"
                     )
             log_file.write("\n")
 
+        # Compare representative keys across folds for each person
+        # This checks how stable the predicted keys are across different folds
+        log_file.write("\n--- Consistency of Representative Keys Across Folds ---\n")
+        for person_idx, keys in person_keys_across_folds.items():
+            if len(keys) > 1:
+                # Compute the cross-fold distances for this person
+                cross_fold_distances = [
+                    hamming(keys[i], keys[j]) * len(keys[i]) for i in range(len(keys)) for j in range(i + 1, len(keys))
+                ]
+                avg_cross_fold_distance = np.mean(cross_fold_distances) if len(cross_fold_distances) > 0 else 0.0
+                log_file.write(
+                    f"Person {person_idx + 1} - Average Cross-Fold Hamming Distance: {avg_cross_fold_distance:.2f}\n"
+                )
+
     print(f"Cross-validation completed. Results saved to {log_file_path}")
+
+if __name__ == "__main__":
+    base_directory = '/Users/lrm00020/PycharmProjects/KEY-GENERATION-using-DL/segmented_ecg_data1'
+    keys_file = '/Users\lrm00020\PycharmProjects\KEY-GENERATION-using-DL\ground_keys\ECG_based_key.json'
+    train_and_test_prebuilt_keys(base_directory, keys_file)
