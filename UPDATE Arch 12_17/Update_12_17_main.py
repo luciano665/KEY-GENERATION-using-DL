@@ -54,7 +54,7 @@ def residual_block(x, filters, downsample=False):
 
 def resnet24_encoder(input_dim):
     """
-    ResNet-like encoder to extract features from ECG signals.
+    Build a ResNet-like encoder to extract features from ECG signals.
     """
     inputs = Input(shape=(input_dim, 1))
     x = conv_block(inputs, filters=64, kernel_size=7, strides=2)
@@ -95,7 +95,7 @@ def build_key_prediction_model(input_dim, output_dim=256):
     model.compile(optimizer=Adam(learning_rate=0.0005), loss='binary_crossentropy')
     return model
 
-def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train_val_test_results__12_12_anu.txt"):
+def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train_val_test_results_12_12_secrets.txt"):
     """
     Train and test the model with pre-built random keys using a 70/20/10 split per person.
     No representative keys. Each segment is treated individually.
@@ -191,12 +191,10 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train
             # Intra-Person Consistency: Compute average pairwise Hamming distances among all segments
             # If the person has N segments, we compute distances between each pair
             num_segs = len(all_segments)
-            print(f"Number of segments are {num_segs}")
             intra_distances = []
             for i in range(num_segs):
                 for j in range(i+1, num_segs):
                     dist = hamming(bin_preds[i], bin_preds[j]) * len(bin_preds[i])
-                    print(f"Number of segments for person{pid}: {len(bin_preds[i])}")
                     intra_distances.append(dist)
             avg_intra = np.mean(intra_distances) if intra_distances else 0.0
 
@@ -238,6 +236,6 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train
     print(f"Training and evaluation completed. Results saved to {log_file_path}")
 
 if __name__ == "__main__":
-    base_directory = '/Users\lrm00020\PycharmProjects\KEY-GENERATION-using-DL\segmented_ecg_data1'
-    keys_file = '/Users\lrm00020\PycharmProjects\KEY-GENERATION-using-DL\ground_keys\ANU.json'
+    base_directory = 'TBD'
+    keys_file = 'TBD'
     train_and_test_prebuilt_keys(base_directory, keys_file)
