@@ -21,7 +21,10 @@ def load_keys(file_path):
         return json.load(f)
 
 def load_valid_ecg_segments(directory, required_length=170):
-    """Load ECG segments of the required length from a directory of CSV files."""
+    """
+    Load ECG segments of the required length from a directory of CSV files.
+    We do not remove anything from your original function, just keep it as is.
+    """
     ecg_segments = []
     for filename in sorted(os.listdir(directory)):
         if filename.endswith('.csv'):
@@ -31,74 +34,96 @@ def load_valid_ecg_segments(directory, required_length=170):
                 ecg_segments.append(segment_data)
     return ecg_segments
 
-def conv_block(x, filters, kernel_size=3, strides=1, padding='same'):
+def conv_block(x, filters, kernel_size=3, strides=1, padding='same', l2_reg=1e-3):
+    """
+    Same logic, but slightly stronger L2 regularization by default (1e-3).
+    """
     x = Conv1D(filters, kernel_size, strides=strides, padding=padding,
-               kernel_regularizer=l2(1e-4))(x)
+               kernel_regularizer=l2(l2_reg))(x)
     x = BatchNormalization()(x)
     x = ReLU()(x)
     return x
 
-def residual_block(x, filters, downsample=False):
+def residual_block(x, filters, downsample=False, l2_reg=1e-3):
+    """
+    A single residual block with optional downsampling, retaining your structure.
+    """
     shortcut = x
     if downsample:
-        x = conv_block(x, filters, strides=2)
+        x = conv_block(x, filters, strides=2, l2_reg=l2_reg)
         shortcut = Conv1D(filters, 1, strides=2, padding='same',
-                          kernel_regularizer=l2(1e-4))(shortcut)
+                          kernel_regularizer=l2(l2_reg))(shortcut)
     else:
-        x = conv_block(x, filters)
-    x = Conv1D(filters, 3, padding='same', kernel_regularizer=l2(1e-4))(x)
+        x = conv_block(x, filters, l2_reg=l2_reg)
+
+    x = Conv1D(filters, 3, padding='same', kernel_regularizer=l2(l2_reg))(x)
     x = BatchNormalization()(x)
     x = Add()([x, shortcut])
     x = ReLU()(x)
     return x
 
-def resnet24_encoder(input_dim):
+def bigger_resnet_encoder(input_dim):
     """
-    Build a ResNet-like encoder to extract features from ECG signals.
+    A bigger ResNet-like encoder, similar logic as your resnet24,
+    but doubling filter sizes for better representational power.
     """
     inputs = Input(shape=(input_dim, 1))
-    x = conv_block(inputs, filters=64, kernel_size=7, strides=2)
+
+    # Increase initial filters to 128 (was 64)
+    x = Conv1D(128, kernel_size=7, strides=2, padding='same', kernel_regularizer=l2(1e-3))(inputs)
+    x = BatchNormalization()(x)
+    x = ReLU()(x)
     x = MaxPooling1D(pool_size=3, strides=2, padding='same')(x)
-    # Residual blocks
-    x = residual_block(x, filters=64)
-    x = residual_block(x, filters=64)
-    x = residual_block(x, filters=64)
 
-    x = residual_block(x, filters=128, downsample=True)
-    x = residual_block(x, filters=128)
-    x = residual_block(x, filters=128)
+    # Residual blocks, stage 1: filters=128
+    x = residual_block(x, filters=128, l2_reg=1e-3)
+    x = residual_block(x, filters=128, l2_reg=1e-3)
+    x = residual_block(x, filters=128, l2_reg=1e-3)
 
-    x = residual_block(x, filters=256, downsample=True)
-    x = residual_block(x, filters=256)
-    x = residual_block(x, filters=256)
+    # Stage 2: filters=256
+    x = residual_block(x, filters=256, downsample=True, l2_reg=1e-3)
+    x = residual_block(x, filters=256, l2_reg=1e-3)
+    x = residual_block(x, filters=256, l2_reg=1e-3)
 
-    x = residual_block(x, filters=512, downsample=True)
-    x = residual_block(x, filters=512)
-    x = residual_block(x, filters=512)
+    # Stage 3: filters=512
+    x = residual_block(x, filters=512, downsample=True, l2_reg=1e-3)
+    x = residual_block(x, filters=512, l2_reg=1e-3)
+    x = residual_block(x, filters=512, l2_reg=1e-3)
+
+    # Stage 4: filters=1024
+    x = residual_block(x, filters=1024, downsample=True, l2_reg=1e-3)
+    x = residual_block(x, filters=1024, l2_reg=1e-3)
+    x = residual_block(x, filters=1024, l2_reg=1e-3)
 
     encoded = GlobalAveragePooling1D()(x)
     return inputs, encoded
 
 def build_key_prediction_model(input_dim, output_dim=256):
     """
-    Build a key prediction model using the encoder ResNet.
-    Add dropout and L2 regularization to help generalization.
+    Build a key prediction model using the bigger ResNet encoder.
+    Hyperparameters tuned for stronger regularization:
+     - L2 = 1e-3
+     - Dropout = 0.3
+     - LR = 0.0003
     """
-    inputs, encoded = resnet24_encoder(input_dim)
-    x = Dense(512, activation='relu', kernel_regularizer=l2(1e-4))(encoded)
-    x = Dropout(0.2)(x)
-    x = Dense(256, activation='relu', kernel_regularizer=l2(1e-4))(x)
-    x = Dropout(0.2)(x)
+    inputs, encoded = bigger_resnet_encoder(input_dim)
+    x = Dense(512, activation='relu', kernel_regularizer=l2(1e-3))(encoded)
+    x = Dropout(0.3)(x)  # increased dropout from 0.2 -> 0.3
+    x = Dense(256, activation='relu', kernel_regularizer=l2(1e-3))(x)
+    x = Dropout(0.3)(x)  # increased dropout from 0.2 -> 0.3
     key_output = Dense(output_dim, activation='sigmoid', name='key_output',
-                       kernel_regularizer=l2(1e-4))(x)
+                       kernel_regularizer=l2(1e-3))(x)
+
     model = Model(inputs, key_output)
-    model.compile(optimizer=Adam(learning_rate=0.0005), loss='binary_crossentropy')
+    # Tuning LR from 0.0005 to 0.0003
+    model.compile(optimizer=Adam(learning_rate=0.0003), loss='binary_crossentropy')
     return model
 
 def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train_val_test_results_12_12_secrets.txt"):
     """
     Train and test the model with pre-built random keys using a 70/20/10 split per person.
-    No representative keys. Each segment is treated individually.
+    Add logic to also incorporate rec_1_filtered, keep special handling for Person 74,
+    and preserve all original code logic.
     """
     max_length = 170
     prebuilt_keys = load_keys(keys_file)
@@ -109,20 +134,30 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train
             continue
         person_id = int(person_dir.split('_')[-1])
         if person_id == 74:
-            # Skip missing folder scenario
+            # Skip missing folder scenario, as in your original code
             continue
-        # Adjust person_id > 74
+        # Adjust person_id for ground truth keys enumeration (1-89)
         adjusted_person_id = person_id - 1 if person_id > 74 else person_id
 
         key_name = f"Person_{adjusted_person_id:02d}"
         if key_name not in prebuilt_keys:
             continue
 
-        person_path = os.path.join(base_directory, person_dir, 'rec_2_filtered')
-        if not os.path.isdir(person_path):
+        # Load from rec_2_filtered
+        person_path_2 = os.path.join(base_directory, person_dir, 'rec_2_filtered')
+        if not os.path.isdir(person_path_2):
             continue
+        segments_2 = load_valid_ecg_segments(person_path_2, required_length=max_length)
 
-        segments = load_valid_ecg_segments(person_path, required_length=max_length)
+        # ADD rec_1_filtered as well
+        person_path_1 = os.path.join(base_directory, person_dir, 'rec_1_filtered')
+        segments_1 = []
+        if os.path.isdir(person_path_1):
+            segments_1 = load_valid_ecg_segments(person_path_1, required_length=max_length)
+
+        # Combine both rec_1_filtered and rec_2_filtered
+        segments = segments_1 + segments_2
+
         if len(segments) < 3:
             # Need at least 3 segments for a meaningful 70/20/10 split
             continue
@@ -188,8 +223,7 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train
             preds = model.predict(all_segments.reshape(-1, max_length, 1))
             bin_preds = (preds > 0.5).astype(int)
 
-            # Intra-Person Consistency: Compute average pairwise Hamming distances among all segments
-            # If the person has N segments, we compute distances between each pair
+            # Intra-Person Consistency: compute average pairwise Hamming distances
             num_segs = len(all_segments)
             intra_distances = []
             for i in range(num_segs):
@@ -198,14 +232,15 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train
                     intra_distances.append(dist)
             avg_intra = np.mean(intra_distances) if intra_distances else 0.0
 
-            # Distance to Ground Truth: Compare each segment's predicted key to the ground truth key
+            # Distance to Ground Truth
             gt_dists = [hamming(ground_key, bp)*len(ground_key) for bp in bin_preds]
             avg_gt_dist = np.mean(gt_dists)
 
-            log_file.write(f"Person {pid}: Avg Intra-Person Distance: {avg_intra:.2f}, Avg Distance to GT: {avg_gt_dist:.2f}\n")
+            log_file.write(f"Person {pid}: Avg Intra-Person Distance: {avg_intra:.2f}, "
+                           f"Avg Distance to GT: {avg_gt_dist:.2f}\n")
 
-        # Inter-Person Distances: Compute average distance between each pair of persons’ segment keys
-        # For each person, we already have predictions in bin_preds. Let's store them first:
+        # Inter-Person Distances
+        log_file.write("\n--- Inter-Person Hamming Distances ---\n")
         person_keys = {}
         for p in all_persons_data:
             pid = p['person_id']
@@ -214,14 +249,11 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train
             bin_preds = (preds > 0.5).astype(int)
             person_keys[pid] = bin_preds
 
-        log_file.write("\n--- Inter-Person Hamming Distances ---\n")
         person_ids = sorted(person_keys.keys())
         for i in range(len(person_ids)):
             for j in range(i+1, len(person_ids)):
                 pid1 = person_ids[i]
                 pid2 = person_ids[j]
-                # Compute the average distance between all segments of pid1 and all segments of pid2
-                # This is a cross combination of their segments
                 segs_pid1 = person_keys[pid1]
                 segs_pid2 = person_keys[pid2]
 
@@ -236,6 +268,6 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train
     print(f"Training and evaluation completed. Results saved to {log_file_path}")
 
 if __name__ == "__main__":
-    base_directory = 'TBD'
-    keys_file = 'TBD'
+    base_directory = 'TBD'  # Replace with your base directory containing Person_1..Person_90
+    keys_file = 'TBD'       # Replace with your ground truth keys JSON
     train_and_test_prebuilt_keys(base_directory, keys_file)
