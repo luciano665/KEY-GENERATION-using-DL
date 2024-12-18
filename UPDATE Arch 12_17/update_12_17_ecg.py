@@ -125,7 +125,7 @@ def evaluate_to_gt(bin_preds, ground_key):
     gt_dists = [hamming(ground_key, bp)*len(ground_key) for bp in bin_preds]
     return np.mean(gt_dists)
 
-def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train_val_test_cv_results.txt"):
+def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train_val_test_cv_results_ECG.txt"):
     """
     Train and test the model with:
       1) Single 70/20/10 split
@@ -224,7 +224,7 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train
 
     with open(log_file_path, 'w') as log_file:
         # --- Single-Split Results ---
-        log_file.write("No Representative Key Approach - RESULTS (Single 70/20/10 Split)\n")
+        log_file.write("ECG Keys - RESULTS (Single 70/20/10 Split)\n")
         log_file.write("============================================================\n\n")
 
         # Evaluate (intra-person, distance to GT) per person on combined train+val+test
@@ -322,6 +322,6 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train
     print(f"Training + single-split evaluation + 3-fold cross-validation completed. Results saved to {log_file_path}")
 
 if __name__ == "__main__":
-    base_directory = 'TBD'  # Replace with your ECG data directory
-    keys_file = 'TBD'       # Replace with your ground truth keys JSON
+    base_directory = '/Users\lrm00020\PycharmProjects\KEY-GENERATION-using-DL\segmented_ecg_data1'  # Replace with your ECG data directory
+    keys_file = '/Users\lrm00020\PycharmProjects\KEY-GENERATION-using-DL\ground_keys\ECG_based_key.json'       # Replace with your ground truth keys JSON
     train_and_test_prebuilt_keys(base_directory, keys_file, "train_val_test_cv_results.txt")

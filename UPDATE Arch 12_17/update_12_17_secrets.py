@@ -125,7 +125,7 @@ def evaluate_to_gt(bin_preds, ground_key):
     gt_dists = [hamming(ground_key, bp)*len(ground_key) for bp in bin_preds]
     return np.mean(gt_dists)
 
-def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train_val_test_cv_results.txt"):
+def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train_val_test_cv_results_secrets.txt"):
     """
     Train and test the model with:
       1) Single 70/20/10 split
@@ -219,12 +219,12 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train
     # Train single-split model
     model = build_key_prediction_model(input_dim=max_length)
     callback = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-    model.fit(X_train, Y_train, epochs=100, batch_size=16, verbose=1,
+    model.fit(X_train, Y_train, epochs=50, batch_size=16, verbose=1,
               validation_data=(X_val, Y_val), callbacks=[callback])
 
     with open(log_file_path, 'w') as log_file:
         # --- Single-Split Results ---
-        log_file.write("No Representative Key Approach - RESULTS (Single 70/20/10 Split)\n")
+        log_file.write("Secrets Keys - RESULTS (Single 70/20/10 Split)\n")
         log_file.write("============================================================\n\n")
 
         # Evaluate (intra-person, distance to GT) per person on combined train+val+test
@@ -298,7 +298,7 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train
                 # For each fold, build a new model
                 cv_model = build_key_prediction_model(input_dim=max_length)
                 cv_callback = EarlyStopping(monitor='loss', patience=5, restore_best_weights=True)
-                cv_model.fit(X_cv_train, Y_cv_train, epochs=50, batch_size=16, verbose=0,
+                cv_model.fit(X_cv_train, Y_cv_train, epochs=100, batch_size=16, verbose=0,
                              callbacks=[cv_callback])
 
                 # Evaluate on the fold's test set
@@ -322,6 +322,6 @@ def train_and_test_prebuilt_keys(base_directory, keys_file, log_file_path="train
     print(f"Training + single-split evaluation + 3-fold cross-validation completed. Results saved to {log_file_path}")
 
 if __name__ == "__main__":
-    base_directory = 'TBD'  # Replace with your ECG data directory
-    keys_file = 'TBD'       # Replace with your ground truth keys JSON
+    base_directory = '/Users\lrm00020\PycharmProjects\KEY-GENERATION-using-DL\segmented_ecg_data1'  # Replace with your ECG data directory
+    keys_file = '/Users\lrm00020\PycharmProjects\KEY-GENERATION-using-DL\ground_keys\secrets_random_keys.json'       # Replace with your ground truth keys JSON
     train_and_test_prebuilt_keys(base_directory, keys_file, "train_val_test_cv_results.txt")
