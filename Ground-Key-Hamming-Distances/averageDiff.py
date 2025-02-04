@@ -1,7 +1,7 @@
 import pandas as pd
 
 #Load CSV file
-file_path = '/Users/lucianomaldonado/ECG-PV-GENERATION-GROUND-KEY/Ground Key Hamming Distances /h_distance_mixed.csv'
+file_path = '/Ground-Key-Hamming-Distances/h_distance_mixed.csv'
 data = pd.read_csv(file_path)
 
 

@@ -30,7 +30,7 @@ for (person1, key1), (person2, key2) in combinations(data.items(), 2):
 df_results = pd.DataFrame(results)
 
 #Save results to a CSV file
-output_path ='/Users/lucianomaldonado/ECG-PV-GENERATION-GROUND-KEY/Ground Key Hamming Distances /h_distance_mixed.csv'
+output_path = '/Ground-Key-Hamming-Distances/h_distance_mixed.csv'
 df_results.to_csv(output_path, index=False)
 
 output_path
