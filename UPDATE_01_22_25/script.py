@@ -1,33 +1,26 @@
-
-BASE_DIR = "/content/drive/MyDrive/ECG_Data"  # Update with your path
-KEY_FILE = "/content/drive/MyDrive/ECG_Data/ground_truth_keys.json"
-LOG_FILE = "/content/drive/MyDrive/ECG_Results/results.txt"
-
-
 import os
 import json
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 import tensorflow_addons as tfa
-
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (
     Input, Dense, Dropout, LayerNormalization,
-    GlobalAveragePooling1D, MultiHeadAttention
+    GlobalAveragePooling1D, MultiHeadAttention, Lambda
 )
 from tensorflow.keras.callbacks import EarlyStopping
 from scipy.spatial.distance import hamming
 from collections import defaultdict
 
-# Set seeds
+# Reproducibility
 tf.random.set_seed(42)
 np.random.seed(42)
 
 
-# [markdown]
-# ### 5. Complete Data Loader
-#
+# ======================================================================
+# 1. Enhanced Data Loading & Preprocessing
+# ======================================================================
 class ECGDataLoader:
     def __init__(self, base_dir, key_path):
         self.base_dir = base_dir
@@ -85,9 +78,33 @@ class ECGDataLoader:
         return np.array(segments)
 
 
-#  [markdown]
-# ### 6. Model Components
-#
+# ======================================================================
+# 2. Advanced Data Augmentation
+# ======================================================================
+class ECGAugmenter:
+    @staticmethod
+    def augment(segment):
+        # Randomly apply transformations
+        if np.random.rand() > 0.5:
+            segment = ECGAugmenter._add_noise(segment)
+        if np.random.rand() > 0.3:
+            segment = ECGAugmenter._time_warp(segment)
+        return segment
+
+    @staticmethod
+    def _add_noise(segment, noise_level=0.03):
+        return segment + np.random.normal(0, noise_level, segment.shape)
+
+    @staticmethod
+    def _time_warp(segment, max_warp=0.2):
+        length = len(segment)
+        warp = int(length * max_warp * np.random.uniform(-1, 1))
+        return np.interp(np.arange(length), np.arange(length) + warp, segment)
+
+
+# ======================================================================
+# 3. Transformer Architecture Components
+# ======================================================================
 class PositionalEncoding(tf.keras.layers.Layer):
     def __init__(self, d_model, max_len=200):
         super().__init__()
@@ -129,32 +146,45 @@ class KeyGenerator(Model):
     def __init__(self, num_persons, key_bits=256):
         super().__init__()
         self.d_model = 128
-        self.encoder = self._build_encoder()
+        self.num_heads = 8
+        self.dff = 512
+        self.num_layers = 4
+
+        # Input processing
+        self.input_proj = Dense(self.d_model)
+        self.pos_encoding = PositionalEncoding(self.d_model)
+
+        # Transformer blocks
+        self.transformer_blocks = [
+            TransformerBlock(self.d_model, self.num_heads, self.dff)
+            for _ in range(self.num_layers)
+        ]
+
+        # Output heads
+        self.global_pool = GlobalAveragePooling1D()
         self.key_head = Dense(key_bits, activation='sigmoid')
         self.embedding_head = Dense(128, activation='tanh')
         self.consistency_head = Dense(num_persons, activation='softmax')
 
-    def _build_encoder(self):
-        inputs = Input(shape=(170, 1))
-        x = Dense(self.d_model)(inputs)
-        x = PositionalEncoding(self.d_model)(x)
-        for _ in range(4):
-            x = TransformerBlock(self.d_model, 8, 512)(x)
-        x = GlobalAveragePooling1D()(x)
-        return Model(inputs, x)
-
     def call(self, inputs):
-        embeddings = self.encoder(inputs)
+        x = self.input_proj(inputs)
+        x = self.pos_encoding(x)
+
+        for transformer in self.transformer_blocks:
+            x = transformer(x)
+
+        pooled = self.global_pool(x)
+
         return {
-            'key': self.key_head(embeddings),
-            'embedding': self.embedding_head(embeddings),
-            'consistency': self.consistency_head(embeddings)
+            'key': self.key_head(pooled),
+            'embedding': self.embedding_head(pooled),
+            'consistency': self.consistency_head(pooled)
         }
 
 
-#  [markdown]
-# ### 7. Hybrid Loss Function
-#
+# ======================================================================
+# 4. Hybrid Loss Function
+# ======================================================================
 class KeyLoss(tf.keras.losses.Loss):
     def __init__(self, alpha=0.6, beta=0.3, gamma=0.1):
         super().__init__()
@@ -174,81 +204,115 @@ class KeyLoss(tf.keras.losses.Loss):
                 self.gamma * consistency_loss)
 
 
-# [markdown]
-# ### 8. Data Generators
-#
-def create_data_generator(person_data, batch_size=32):
-    while True:
-        batch = {
-            'key': [],
-            'embedding': [],
-            'consistency': []
-        }
+# ======================================================================
+# 5. Complete Training Pipeline
+# ======================================================================
+class KeyTrainingSystem:
+    def __init__(self, data_loader):
+        self.data = data_loader.person_data
+        self.num_persons = len(data_loader.key_map)
+        self.model = KeyGenerator(self.num_persons)
+        self.optimizer = tfa.optimizers.AdamW(learning_rate=3e-4, weight_decay=1e-4)
+        self.model.compile(optimizer=self.optimizer, loss=KeyLoss())
 
-        # Select random persons
-        selected_persons = np.random.choice(person_data, size=batch_size // 4)
+    def train(self, epochs=100, batch_size=32):
+        train_data, val_data = self._prepare_datasets()
+        train_gen = self._data_generator(train_data, batch_size)
+        val_gen = self._data_generator(val_data, batch_size)
 
-        for person in selected_persons:
-            # Select 4 segments per person
-            segs = person['segments']
-            if len(segs) < 4:
-                segs = np.repeat(segs, 4 // len(segs) + 1, axis=0)
+        early_stop = EarlyStopping(
+            monitor='val_loss',
+            patience=15,
+            restore_best_weights=True
+        )
 
-            indices = np.random.choice(len(segs), 4, replace=False)
-            selected_segs = segs[indices]
+        return self.model.fit(
+            train_gen,
+            validation_data=val_gen,
+            epochs=epochs,
+            callbacks=[early_stop],
+            steps_per_epoch=len(train_data) // batch_size,
+            validation_steps=len(val_data) // batch_size
+        )
 
-            # Add to batch
-            batch['key'].extend([person['key']] * 4)
-            batch['embedding'].extend([person['id']] * 4)
-            batch['consistency'].extend([tf.one_hot(person['id'], len(person_data))] * 4)
+    def _prepare_datasets(self, test_split=0.1, val_split=0.2):
+        train_data = []
+        val_data = []
 
-            yield (selected_segs.reshape(-1, 170, 1).astype(np.float32),
-                   {'key': np.array(batch['key']),
-                    'embedding': np.array(batch['embedding']),
-                    'consistency': np.array(batch['consistency'])})
+        for person in self.data:
+            segments = person['segments']
+            n_segments = len(segments)
+
+            # Split indices
+            val_idx = int(n_segments * (1 - val_split - test_split))
+            test_idx = int(n_segments * (1 - test_split))
+
+            # Store splits
+            train_data.append({
+                **person,
+                'segments': segments[:val_idx],
+                'split': 'train'
+            })
+            val_data.append({
+                **person,
+                'segments': segments[val_idx:test_idx],
+                'split': 'val'
+            })
+
+        return train_data, val_data
+
+    def _data_generator(self, data, batch_size=32):
+        while True:
+            batch = {
+                'inputs': [],
+                'targets': {
+                    'key': [],
+                    'embedding': [],
+                    'consistency': []
+                }
+            }
+
+            # Select random persons
+            selected_persons = np.random.choice(data, size=batch_size // 4)
+
+            for person in selected_persons:
+                # Select 4 segments per person
+                segs = person['segments']
+                if len(segs) < 4:
+                    segs = np.repeat(segs, 4 // len(segs) + 1, axis=0)
+
+                indices = np.random.choice(len(segs), 4, replace=False)
+                selected_segs = segs[indices]
+
+                # Apply augmentation
+                for i in range(4):
+                    if np.random.rand() > 0.5 and person['split'] == 'train':
+                        selected_segs[i] = ECGAugmenter.augment(selected_segs[i])
+
+                # Store in batch
+                batch['inputs'].extend(selected_segs)
+                batch['targets']['key'].extend([person['key']] * 4)
+                batch['targets']['embedding'].extend([person['id']] * 4)
+                batch['targets']['consistency'].extend(
+                    [tf.one_hot(person['id'], self.num_persons)] * 4
+                )
+
+            # Convert to numpy arrays
+            inputs = np.array(batch['inputs']).reshape(-1, 170, 1).astype(np.float32)
+            targets = {
+                'key': np.array(batch['targets']['key']),
+                'embedding': np.array(batch['targets']['embedding']),
+                'consistency': np.array(batch['targets']['consistency'])
+            }
+
+            yield inputs, targets
 
 
-#  [markdown]
-# ### 9. Complete Training Setup
-#
-# Initialize data loader
-loader = ECGDataLoader(BASE_DIR, KEY_FILE)
-
-# Create data generators
-train_data = [p for p in loader.person_data if len(p['segments']) >= 8]
-train_gen = create_data_generator(train_data)
-val_gen = create_data_generator(train_data)  # Use same for demonstration
-
-# Build model
-model = KeyGenerator(num_persons=len(loader.key_map))
-
-# Compile with custom loss
-optimizer = tfa.optimizers.AdamW(learning_rate=3e-4, weight_decay=1e-4)
-model.compile(optimizer=optimizer, loss=KeyLoss())
-
-# Callbacks
-early_stop = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)
-
-# [markdown]
-# ### 10. Training Execution
-#
-print("Starting training...")
-history = model.fit(
-    train_gen,
-    steps_per_epoch=100,
-    validation_data=val_gen,
-    validation_steps=20,
-    epochs=100,
-    callbacks=[early_stop]
-)
-print("Training completed!")
-
-
-#  [markdown]
-# ### 11. Complete Evaluation System
-#
+# ======================================================================
+# 6. Complete Evaluation System
+# ======================================================================
 class KeyEvaluator:
-    def __init__(self, model, data, log_file):
+    def __init__(self, model, data, log_file="results.txt"):
         self.model = model
         self.data = data
         self.log_file = log_file
@@ -262,38 +326,52 @@ class KeyEvaluator:
 
     def _calculate_distances(self):
         for person in self.data:
-            # Process all segments
             segments = person['segments'].reshape(-1, 170, 1).astype(np.float32)
             outputs = self.model.predict(segments, verbose=0)
 
-            # Generate final key
+            # Generate final key using temporal averaging
             final_key = (np.mean(outputs['key'], axis=0) > 0.5).astype(int)
 
-            # Calculate metrics
-            intra_dist = np.mean([hamming(final_key, k) * 256
-                                  for k in (outputs['key'] > 0.5).astype(int)])
+            # Calculate intra-person distances
+            binary_preds = (outputs['key'] > 0.5).astype(int)
+            intra_dists = [hamming(final_key, k) * 256 for k in binary_preds]
+
+            # Calculate ground truth distance
             gt_dist = hamming(final_key, person['key']) * 256
 
             self.results[person['id']] = {
-                'intra': intra_dist,
-                'gt': gt_dist,
+                'intra_mean': np.mean(intra_dists),
+                'intra_std': np.std(intra_dists),
+                'gt_dist': gt_dist,
                 'key': final_key
             }
 
     def _cryptographic_analysis(self):
         all_keys = [v['key'] for v in self.results.values()]
+
+        # Bit balance analysis
+        bit_balance = np.mean([np.mean(k) for k in all_keys])
+
+        # Avalanche effect
+        diffs = []
+        for i in range(len(all_keys)):
+            for j in range(i + 1, len(all_keys)):
+                diffs.append(hamming(all_keys[i], all_keys[j]))
+
+        # Unique keys
+        unique_keys = len(set(map(tuple, all_keys)))
+
         self.results['metrics'] = {
-            'bit_balance': np.mean([np.mean(k) for k in all_keys]),
-            'avalanche': np.mean([hamming(k1, k2) for i, k1 in enumerate(all_keys)
-                                  for j, k2 in enumerate(all_keys) if i < j]),
-            'unique': len(set(map(tuple, all_keys)))
+            'bit_balance': bit_balance,
+            'avalanche_effect': np.mean(diffs),
+            'unique_keys': f"{unique_keys}/{len(all_keys)}"
         }
 
     def _save_results(self):
         with open(self.log_file, 'w') as f:
             # Header
             f.write("ECG Cryptographic Key Generation Report\n")
-            f.write("=======================================\n\n")
+            f.write("========================================\n\n")
 
             # Individual Results
             f.write("Per-Subject Results:\n")
@@ -303,23 +381,44 @@ class KeyEvaluator:
                     continue
                 res = self.results[pid]
                 f.write(f"Subject {pid:03d}:\n")
-                f.write(f"  Intra-Segment Consistency: {res['intra']:.2f} bits\n")
-                f.write(f"  Ground Truth Distance:     {res['gt']:.2f} bits\n")
-                f.write(f"  Generated Key:             {''.join(map(str, res['key'][:16]))}...\n\n")
+                f.write(f"  Intra-Segment Consistency: {res['intra_mean']:.2f} ± {res['intra_std']:.2f} bits\n")
+                f.write(f"  Ground Truth Distance:     {res['gt_dist']:.2f} bits\n")
+                f.write(f"  Generated Key:             {self._truncate_key(res['key'])}\n\n")
 
             # Cryptographic Metrics
-            f.write("\nOverall Cryptographic Metrics:\n")
+            f.write("\nCryptographic Properties:\n")
             f.write("-" * 40 + "\n")
             metrics = self.results['metrics']
             f.write(f"Bit Balance (0-1):           {metrics['bit_balance']:.3f}\n")
-            f.write(f"Avalanche Effect (%% changed): {metrics['avalanche'] * 100:.1f}%%\n")
-            f.write(f"Unique Keys Generated:       {metrics['unique']}/{len(self.data)}\n")
+            f.write(f"Avalanche Effect (%% changed): {metrics['avalanche_effect'] * 100:.1f}%%\n")
+            f.write(f"Unique Keys Generated:       {metrics['unique_keys']}\n")
+
+    def _truncate_key(self, key, length=16):
+        return ''.join(map(str, key[:length])) + '...'
 
 
-#  [markdown]
-# ### 12. Run Evaluation
-#
-print("\nStarting evaluation...")
-evaluator = KeyEvaluator(model, loader.person_data, LOG_FILE)
-results = evaluator.evaluate()
-print(f"Evaluation complete! Results saved to {LOG_FILE}")
+# ======================================================================
+# 7. Main Execution
+# ======================================================================
+if __name__ == "__main__":
+    # Configuration
+    BASE_DIR = "/path/to/ecg_data"
+    KEY_FILE = "/path/to/ground_truth_keys.json"
+    LOG_FILE = "/path/to/results.txt"
+
+    # Initialize data loader
+    loader = ECGDataLoader(BASE_DIR, KEY_FILE)
+
+    # Initialize training system
+    trainer = KeyTrainingSystem(loader)
+
+    # Train model
+    print("Starting training...")
+    history = trainer.train(epochs=100)
+    print("Training completed!")
+
+    # Evaluate model
+    print("\nStarting evaluation...")
+    evaluator = KeyEvaluator(trainer.model, loader.person_data, LOG_FILE)
+    results = evaluator.evaluate()
+    print(f"Evaluation complete! Results saved to {LOG_FILE}")
