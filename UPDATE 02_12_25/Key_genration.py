@@ -173,7 +173,7 @@ class KeyGenerationSystem:
 
     def generate_key(self, ecg_segments, threshold=0.5):
         """Generate final key from multiple segments"""
-        if not ecg_segments:
+        if ecg_segments is None or len(ecg_segments) == 0:
             raise ValueError("No ECG segments provided for key generation")
 
         predictions = self.model.predict(np.array(ecg_segments))
@@ -193,23 +193,61 @@ if __name__ == "__main__":
         kgs = KeyGenerationSystem(DATA_DIR, KEY_FILE)
 
         print("\nStarting training...")
-        kgs.train(epochs=150)
+        kgs.train(epochs=100)
 
-        print("\nTesting key generation:")
-        if kgs.loader.persons:
-            test_person = kgs.loader.persons[0]
-            test_segments = test_person['segments'][:5]
+        # ----------------------------
+        # Test key generation for all persons
+        # ----------------------------
+        print("\nTesting key generation for all persons:")
 
-            print(f"Generating key for Person {test_person['id']}")
-            generated_key = kgs.generate_key(test_segments)
-            ground_truth = test_person['key']
+        # Dictionary to hold aggregated keys for inter-person comparisons
+        aggregated_keys = {}
 
-            accuracy = np.mean(generated_key == ground_truth)
-            print(f"Key Match Accuracy: {accuracy:.2%}")
-            print(f"Generated: {generated_key[:24]}...")
-            print(f"Ground Truth: {ground_truth[:24]}...")
-        else:
-            print("No valid persons available for testing")
+        for person in kgs.loader.persons:
+            segments = person['segments']
+            # Generate aggregated key from all segments for this person
+            aggregated_key = kgs.generate_key(segments)
+            ground_truth = person['key'].astype(np.int32)
+            accuracy = np.mean(aggregated_key == ground_truth)
+
+            print(f"\nPerson {person['id']}:")
+            print(f"  Aggregated Key Accuracy: {accuracy:.2%}")
+            print(f"  Aggregated Key: {aggregated_key[:24]}...")
+            print(f"  Ground Truth:   {ground_truth[:24]}...")
+
+            aggregated_keys[person['id']] = aggregated_key
+
+            # ----------------------------
+            # Compute Intra-Person Hamming Distance
+            # ----------------------------
+            # Predict keys for individual segments (each row in predictions)
+            predictions = kgs.model.predict(np.array(segments))
+            individual_keys = (predictions > 0.5).astype(np.int32)
+            num_keys = individual_keys.shape[0]
+
+            if num_keys > 1:
+                distances = []
+                for i in range(num_keys):
+                    for j in range(i + 1, num_keys):
+                        # Hamming distance: count of differing bits
+                        d = np.sum(individual_keys[i] != individual_keys[j])
+                        distances.append(d)
+                avg_distance = np.mean(distances)
+                print(f"  Intra-person average Hamming distance: {avg_distance:.2f} bits")
+            else:
+                print("  Not enough segments to compute intra-person Hamming distance.")
+
+        # ----------------------------
+        # Compute Inter-Person Hamming Distances (aggregated keys)
+        # ----------------------------
+        print("\nInter-person Hamming distances (aggregated keys):")
+        person_ids = sorted(aggregated_keys.keys())
+        for i in range(len(person_ids)):
+            for j in range(i + 1, len(person_ids)):
+                key1 = aggregated_keys[person_ids[i]]
+                key2 = aggregated_keys[person_ids[j]]
+                distance = np.sum(key1 != key2)
+                print(f"  Distance between Person {person_ids[i]} and Person {person_ids[j]}: {distance} bits")
 
     except Exception as e:
         print(f"\nError: {str(e)}")
