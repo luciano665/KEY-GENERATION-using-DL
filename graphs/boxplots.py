@@ -4636,6 +4636,8 @@ Inter-person Hamming distances (aggregated keys):
 """
 
 # -----------------------------
+
+# -----------------------------
 # Extract Intra-person Hamming Distances
 intra_pattern = r"Intra-person average Hamming distance:\s*([\d\.]+) bits"
 intra_matches = re.findall(intra_pattern, text)
@@ -4650,7 +4652,7 @@ print("Intra-person Hamming distances: mean = {:.2f} bits, std = {:.2f} bits".fo
 # Extract Inter-person Hamming Distances and group by Person
 pattern = r"Distance between Person (\d+) and Person (\d+):\s*(\d+) bits"
 matches = re.findall(pattern, text)
-# Create a dictionary (for persons 1 to 89)
+# Create a dictionary for persons 1 to 89
 person_dists = {p: [] for p in range(1, 90)}
 for p1, p2, d in matches:
     p1, p2, d = int(p1), int(p2), int(d)
@@ -4660,34 +4662,37 @@ for p1, p2, d in matches:
 inter_data = [person_dists[p] for p in sorted(person_dists.keys())]
 
 # -----------------------------
-# Plotting Intra-person Hamming Distance Boxplot (with STD annotation)
-plt.figure(figsize=(8, 6))
-bp = plt.boxplot(intra_hd, vert=True, patch_artist=True, showfliers=True)
-# Customize the box appearance
-for box in bp['boxes']:
-    box.set(facecolor='lightblue', edgecolor='blue', linewidth=1.5)
-for median in bp['medians']:
-    median.set(color='red', linewidth=2)
-for whisker in bp['whiskers']:
-    whisker.set(color='blue', linewidth=1.5)
-for cap in bp['caps']:
-    cap.set(color='blue', linewidth=1.5)
-for flier in bp['fliers']:
-    flier.set(marker='o', color='gray', alpha=0.5)
-plt.ylabel("Hamming Distance (bits)", fontsize=14)
-plt.title("Intra-person Hamming Distances\nMean = {:.2f} bits, STD = {:.2f} bits".format(intra_mean, intra_std), fontsize=16)
-plt.xticks([1], ["Intra HD"], fontsize=12)
-plt.yticks(fontsize=12)
+# Divide persons into two groups:
+group1 = inter_data[:44]   # Persons 1 to 44 (44 persons)
+group2 = inter_data[44:]   # Persons 45 to 89 (45 persons)
+
+# -----------------------------
+# Plot Inter-person Boxplot for Group 1 (Persons 1-44)
+plt.figure(figsize=(12, 6))
+bp1 = plt.boxplot(group1, patch_artist=True, showfliers=True)
+# Create an array of colors from a colormap (using hsv for distinct colors)
+colors1 = plt.cm.hsv(np.linspace(0, 1, len(group1)))
+for patch, color in zip(bp1['boxes'], colors1):
+    patch.set_facecolor(color)
+plt.xlabel("Person", fontsize=16)
+plt.ylabel("Hamming Distance (bits)", fontsize=20)
+plt.title("Inter-person Hamming Distances for Persons 1–44", fontsize=20)
+plt.xticks(range(1, 45), [str(p) for p in range(1, 45)], rotation=90, fontsize=16)
 plt.grid(axis='y', linestyle='--', alpha=0.7)
 plt.tight_layout()
 plt.show()
 
-# Plotting Inter-person Hamming Distances Boxplot (unchanged)
-plt.figure(figsize=(18, 6))
-plt.boxplot(inter_data, showfliers=True)
-plt.xlabel("Person", fontsize=12)
-plt.ylabel("Hamming Distance (bits)", fontsize=12)
-plt.title("Inter-person Hamming Distances for 89 Persons", fontsize=14)
-plt.xticks(range(1, 90), [str(p) for p in range(1, 90)], rotation=90, fontsize=8)
+# -----------------------------
+# Plot Inter-person Boxplot for Group 2 (Persons 45-89)
+plt.figure(figsize=(12, 6))
+bp2 = plt.boxplot(group2, patch_artist=True, showfliers=True)
+colors2 = plt.cm.hsv(np.linspace(0, 1, len(group2)))
+for patch, color in zip(bp2['boxes'], colors2):
+    patch.set_facecolor(color)
+plt.xlabel("Person", fontsize=16)
+plt.ylabel("Hamming Distance (bits)", fontsize=20)
+plt.title("Inter-person Hamming Distances for Persons 45–89", fontsize=20)
+plt.xticks(range(1, len(group2)+1), [str(p) for p in range(45, 90)], rotation=90, fontsize=16)
+plt.grid(axis='y', linestyle='--', alpha=0.7)
 plt.tight_layout()
 plt.show()
