@@ -149,6 +149,10 @@ class PatchEmbedding(tf.keras.layers.Layer):
 
     def call(self, x):
         # x: (batch, seq_len, channels)
+        # Add channel dimension if input is 2D
+        if len(x.shape) == 2:
+            x = tf.expand_dims(x, axis=-1) # Add channel dimension
+
         x = self.projection(x)  # (batch, num_patches, embed_dim)
         return x
 
@@ -239,9 +243,11 @@ class KeyGenerationSystem:
         """Generate a final aggregated key from multiple segments."""
         if ecg_segments is None or len(ecg_segments) == 0:
             raise ValueError("No ECG segments provided for key generation")
-        ecg_segments = np.array(ecg_segments)
+        ecg_segments = np.array(ecg_segments, dtype=np.float32)
+        # Explicitly reshape to ensure correct dimensions (batch, seq_len, channels)
         if ecg_segments.ndim == 2:
-            ecg_segments = ecg_segments[..., np.newaxis]
+            ecg_segments = ecg_segments.reshape(ecg_segments.shape[0], ecg_segments.shape[1], 1)
+
         predictions = self.model.predict(ecg_segments)
         avg_prob = np.mean(predictions, axis=0)
         return (avg_prob > threshold).astype(np.int32)
@@ -277,6 +283,11 @@ if __name__ == "__main__":
 
         for person in kgs.loader.persons:
             segments = person['segments']
+
+            # Reshape segments to ensure they have shape (batch, 170, 1)
+            if len(segments.shape) == 2:
+                segments = segments.reshape(segments.shape[0], segments.shape[1], 1)
+
             # Generate aggregated key from all segments for this person
             aggregated_key = kgs.generate_key(segments)
             ground_truth = person['key'].astype(np.int32)
@@ -292,7 +303,7 @@ if __name__ == "__main__":
             # ----------------------------
             # Compute Intra-Person Hamming Distance
             # ----------------------------
-            predictions = kgs.model.predict(np.array(segments))
+            predictions = kgs.model.predict(segments)
             individual_keys = (predictions > 0.5).astype(np.int32)
             num_keys = individual_keys.shape[0]
 
@@ -326,3 +337,6 @@ if __name__ == "__main__":
         print("2. CSV files contain exactly 170 values, no headers")
         print("3. JSON keys match Person_XX numbering (1-89)")
         print("4. Minimum 10 segments across all persons")
+
+        # Add new complatibility with all recordings
+
