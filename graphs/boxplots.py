@@ -4636,12 +4636,13 @@ Inter-person Hamming distances (aggregated keys):
 """
 
 # -----------------------------
-
-# -----------------------------
 # Extract Intra-person Hamming Distances
 intra_pattern = r"Intra-person average Hamming distance:\s*([\d\.]+) bits"
 intra_matches = re.findall(intra_pattern, text)
 intra_hd = [float(x) for x in intra_matches]
+
+
+
 
 # Compute mean and standard deviation for intra-person distances
 intra_mean = np.mean(intra_hd)

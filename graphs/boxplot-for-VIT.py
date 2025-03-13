@@ -9600,6 +9600,19 @@ intra_mean = np.mean(intra_hd)
 intra_std = np.std(intra_hd)
 print("Intra-person Hamming distances: mean = {:.2f} bits, std = {:.2f} bits".format(intra_mean, intra_std))
 
+# Plot Intra-person Boxplot
+plt.figure(figsize=(8, 6))
+bp_intra = plt.boxplot(intra_hd, patch_artist=True, showfliers=True)
+for patch in bp_intra['boxes']:
+    patch.set_facecolor('skyblue')
+plt.xlabel("Intra-person", fontsize=16)
+plt.ylabel("Hamming Distance (bits)", fontsize=20)
+plt.title("Intra-person Hamming Distances", fontsize=20)
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.tight_layout()
+plt.show()
+
+
 # -----------------------------
 # Extract Inter-person Hamming Distances and group by Person
 pattern = r"Distance between Person (\d+) and Person (\d+):\s*(\d+) bits"
