@@ -7,6 +7,7 @@ from tensorflow.keras.layers import Conv1D, MultiHeadAttention, LayerNormalizati
 from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import EarlyStopping
 from sklearn.model_selection import train_test_split
+import pickle
 
 
 # ==============================================================================
@@ -347,6 +348,13 @@ if __name__ == "__main__":
         else:
             print("\nNo data available to compute mean and standard deviation for inter-person Hamming distance")
 
+        # Save the raw distance data for later plotting:
+        with open("all_intra_distances.pkl", "wb") as f:
+            pickle.dump(all_intra_distances, f)
+
+        with open("all_inter_distances.pkl", "wb") as f:
+            pickle.dump(all_inter_distances, f)
+            
     except Exception as e:
         print(f"\nError: {str(e)}")
         print("Verification Checklist:")
