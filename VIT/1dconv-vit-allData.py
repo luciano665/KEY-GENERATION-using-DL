@@ -329,32 +329,39 @@ if __name__ == "__main__":
         # ----------------------------
         # Compute Inter-Person Hamming Distances (aggregated keys)
         # ----------------------------
-        all_inter_distances = []
-        print("\nInter-person Hamming distances (aggregated keys):")
         person_ids = sorted(aggregated_keys.keys())
+        person_inter_dists = {p: [] for p in person_ids}
+        print("\nInter-person Hamming distances (aggregated keys):")
         for i in range(len(person_ids)):
             for j in range(i + 1, len(person_ids)):
                 key1 = aggregated_keys[person_ids[i]]
                 key2 = aggregated_keys[person_ids[j]]
-                distance = np.sum(key1 != key2)
-                all_inter_distances.append(distance)
-                print(f"  Distance between Person {person_ids[i]} and Person {person_ids[j]}: {distance} bits")
+                d = int(np.sum(key1 != key2))
+                # Save the distance for both persons
+                person_inter_dists[person_ids[i]].append(d)
+                person_inter_dists[person_ids[j]].append(d)
+                print(f"  Distance between Person {person_ids[i]} and Person {person_ids[j]}: {d} bits")
 
+        # Compute overall inter-person statistics by flattening the dictionary values:
+        all_inter_distances = []
+        for dist_list in person_inter_dists.values():
+            all_inter_distances.extend(dist_list)
         if all_inter_distances:
             overall_inter_mean = np.mean(all_inter_distances)
             overall_inter_std = np.std(all_inter_distances)
             print("\nOverall Inter-person Hamming Distance: "
-                  f"mean= {overall_inter_mean:.2f} bits, std= {overall_inter_std:.2f} bits")
+                  f"mean = {overall_inter_mean:.2f} bits, std = {overall_inter_std:.2f} bits")
         else:
-            print("\nNo data available to compute mean and standard deviation for inter-person Hamming distance")
+            print("\nNo data available to compute inter-person Hamming Distance statistics.")
 
+        # ----------------------------
         # Save the raw distance data for later plotting:
         with open("all_intra_distances.pkl", "wb") as f:
             pickle.dump(all_intra_distances, f)
 
-        with open("all_inter_distances.pkl", "wb") as f:
-            pickle.dump(all_inter_distances, f)
-            
+        with open("person_inter_dists.pkl", "wb") as f:
+            pickle.dump(person_inter_dists, f)
+
     except Exception as e:
         print(f"\nError: {str(e)}")
         print("Verification Checklist:")
