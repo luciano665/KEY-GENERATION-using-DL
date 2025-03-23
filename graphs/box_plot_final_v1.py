@@ -24,7 +24,7 @@ plt.grid(axis='y', linestyle='--', alpha=0.7)
 plt.tight_layout()
 plt.show()
 
-# -----------------------------
+# 1-----------------------------
 # Load inter-person distances (grouped by person)
 with open("", "rb") as f:
     person_dists = pickle.load(f)
@@ -40,12 +40,12 @@ overall_inter_mean = np.mean(all_inter_distances)
 overall_inter_std = np.std(all_inter_distances)
 print("Inter-person Hamming distances: mean = {:.2f} bits, std = {:.2f} bits".format(overall_inter_mean, overall_inter_std))
 
-# -----------------------------
+# 2-----------------------------
 # Divide persons into two groups:
 group1 = inter_data[:44]   # Persons 1 to 44 (44 persons)
 group2 = inter_data[44:]   # Persons 45 to 89 (45 persons)
 
-# -----------------------------
+# 2.1-----------------------------
 # Plot Inter-person Boxplot for Group 1 (Persons 1-44)
 plt.figure(figsize=(12, 6))
 bp1 = plt.boxplot(group1, patch_artist=True, showfliers=True)
