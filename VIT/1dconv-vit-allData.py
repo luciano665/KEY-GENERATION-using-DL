@@ -369,6 +369,7 @@ if __name__ == "__main__":
         print("2. CSV files contain exactly 170 values, no headers")
         print("3. JSON keys match Person_XX numbering (1-89)")
         print("4. Minimum 10 segments across all persons")
+        print("Something went wrong check again.")
 
 
 

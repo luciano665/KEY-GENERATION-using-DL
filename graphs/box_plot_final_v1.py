@@ -60,7 +60,7 @@ plt.grid(axis='y', linestyle='--', alpha=0.7)
 plt.tight_layout()
 plt.show()
 
-# -----------------------------
+# ---------------------------------
 # Plot Inter-person Boxplot for Group 2 (Persons 45-89)
 plt.figure(figsize=(12, 6))
 bp2 = plt.boxplot(group2, patch_artist=True, showfliers=True)
