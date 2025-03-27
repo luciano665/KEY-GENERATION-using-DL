@@ -104,6 +104,7 @@ class ECGKeyLoader:
         if len(X) < 2:
             raise ValueError(f"Need at least 2 samples, got {len(X)}")
 
+        # Train and test split
         return train_test_split(X, y, test_size=test_size, stratify=ids)
 
 
@@ -208,6 +209,9 @@ class KeyGenerationSystem:
     def train(self, epochs=100, batch_size=32):
         X_train, X_val, y_train, y_val = self.loader.get_train_data()
         print("X_train shape:" , X_train.shape)
+        print("X_val shape:", X_val.shape)
+        print("y_train shape:", y_train.shape)
+        print("y_val shape:", y_val.shape)
 
         # Initialize the transformer-based model.
         # We assume each key is a binary vector (default length 256).
