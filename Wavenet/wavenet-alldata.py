@@ -360,8 +360,8 @@ class KeyGenerationSystem:
 # 4. Main Execution with Error Handling
 # ==============================================================================
 if __name__ == "__main__":
-    DATA_DIR = "/Users/lucianomaldonado/ECG-PV-GENERATION-GROUND-KEY/segmented_ecg_data"
-    KEY_FILE = "/Users/lucianomaldonado/ECG-PV-GENERATION-GROUND-KEY/Ground Keys/secrets_random_keys.json"
+    DATA_DIR = ""
+    KEY_FILE = ""
 
     try:
         # Init the key generation system with data directories and key file
