@@ -132,8 +132,8 @@ class ECGKeyLoader:
         X, y, ids = [], [], []
         for p in self.persons:
             X.extend(p['segments'])
-            y.extend(p['key'] * len(p['segments']))
-            ids.extend(p['id'] * len(p['segments']))
+            y.extend([p['key']] * len(p['segments']))
+            ids.extend([p['id']] * len(p['segments']))
 
         # Reshape to add the channel dimension
         X = np.array(X).reshape((-1, 170, 1))
@@ -158,9 +158,9 @@ class WaveNetResidualBlock(tf.keras.layers.Layer):
     def __init__(self, filters, kernel_size, dilation_rate, dropout_rate=0.1):
         super(WaveNetResidualBlock, self).__init__()
         # Conv layer for filter part
-        self.conv_filter = Conv1D(filters, kernel_size, dilation_rate=dilation_rate, padding='casual')
+        self.conv_filter = Conv1D(filters, kernel_size, dilation_rate=dilation_rate, padding='causal')
         # Conv for gate part
-        self.conv_gate = Conv1D(filters, kernel_size, dilation_rate=dilation_rate, padding='casual')
+        self.conv_gate = Conv1D(filters, kernel_size, dilation_rate=dilation_rate, padding='causal')
         # Dropout layer for regularization
         self.dropout = Dropout(dropout_rate)
         # 1x1 Conv layer to produce the residual output
@@ -290,9 +290,9 @@ class KeyGenerationSystem:
             dropout_rate=0.1
         )
         self.model.compile(
-            optmizer = tf.keras.optimizers.Adam(lr=1e-4),
-            loss = tf.keras.losses.BinaryCrossentropy(),
-            metrics = ['accuracy']
+            optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
+            loss=tf.keras.losses.BinaryCrossentropy(),
+            metrics=['accuracy']
         )
 
         # Train the model with early stopping to prevent overfitting
@@ -330,8 +330,8 @@ class KeyGenerationSystem:
 # 4. Main Execution with Error Handling
 # ==============================================================================
 if __name__ == "__main__":
-    DATA_DIR = "/Users/lucianomaldonado/ECG-PV-GENERATION-GROUND-KEY/segmented_ecg_data"
-    KEY_FILE = "/Users/lucianomaldonado/ECG-PV-GENERATION-GROUND-KEY/Ground Keys/secrets_random_keys.json"
+    DATA_DIR = ""
+    KEY_FILE = ""
 
     try:
         # Init the key generation system with data directories and key file
@@ -343,7 +343,7 @@ if __name__ == "__main__":
         kgs.train(epochs=100)
 
         # Force the model to build with expected input shape by performing a dummy forward pass
-        _ = kgs.model(tf.zeros(1, 170, 1))
+        _ = kgs.model(tf.zeros((1, 170, 1)))
 
         # ----------------------------
         # Test key generation for all persons
