@@ -157,6 +157,13 @@ class WaveNetResidualBlock(tf.keras.layers.Layer):
     """
     def __init__(self, filters, kernel_size, dilation_rate, dropout_rate=0.1):
         super(WaveNetResidualBlock, self).__init__()
+
+        self.filters = filters
+        self.kernel_size = kernel_size
+        self.dilation_rate = dilation_rate
+        self.dropout_rate = dropout_rate
+
+        """
         # Conv layer for filter part
         self.conv_filter = Conv1D(filters, kernel_size, dilation_rate=dilation_rate, padding='causal')
         # Conv for gate part
@@ -167,6 +174,21 @@ class WaveNetResidualBlock(tf.keras.layers.Layer):
         self.conv_residual = Conv1D(filters, 1, padding='same')
         # 1x1 Conv layer to produce the skip connection output
         self.conv_skip = Conv1D(filters, 1, padding='same')
+        """
+
+    def build(self, input_shape):
+        # Create layers with known input shape during build()
+        # Conv layer for filter part
+        self.conv_filter = Conv1D(self.filters, self.kernel_size, dilation_rate=self.dilation_rate, padding='causal')
+        # Conv for gate part
+        self.conv_gate = Conv1D(self.filters, self.kernel_size, dilation_rate=self.dilation_rate, padding='causal')
+        # Dropout layer for regularization
+        self.dropout = Dropout(self.dropout_rate)
+        # 1x1 Conv layer to produce the residual output
+        self.conv_residual = Conv1D(self.filters, 1, padding='same')
+        # 1x1 Conv layer to produce the skip connection output
+        self.conv_skip = Conv1D(self.filters, 1, padding='same')
+        super().build(input_shape)
 
     def call(self, inputs, training=False):
         """
@@ -203,25 +225,30 @@ class WaveNetKeyGenerator(tf.keras.Model):
         self.seq_len = seq_len
         self.num_filters = num_filters
         self.num_wavenet_blocks = num_wavenet_blocks
+        self.kernel_size = kernel_size
         self.key_bits = key_bits
+        self.dropout_rate = dropout_rate
+
+    def build(self, input_shape):
 
         # Initial 1x1 convolution to adjust input dimensions
-        self.initial_conv = Conv1D(num_filters, kernel_size=1, padding='same')
+        self.initial_conv = Conv1D(self.num_filters, kernel_size=1, padding='same')
         # Create list to hold all Wavenet residual blocks with increasing dilation rates
         self.wavenet_blocks = []
-        for i in range(num_wavenet_blocks):
+        for i in range(self.num_wavenet_blocks):
             dilation_rate = 2 ** i # Increase dilation rate exponentially
-            block = WaveNetResidualBlock(num_filters, kernel_size, dilation_rate, dropout_rate)
+            block = WaveNetResidualBlock(self.num_filters, self.kernel_size, dilation_rate, self.dropout_rate)
             self.wavenet_blocks.append(block)
 
         # Activation layer
         self.relu = ReLU()
         # Post-processing convolution after aggregating skip connections
-        self.conv_post = Conv1D(num_filters, kernel_size=1, padding='same')
+        self.conv_post = Conv1D(self.num_filters, kernel_size=1, padding='same')
         # Global average pooling to reduce temporal dimensions
         self.gap = GlobalAveragePooling1D()
         # Final dense layer to project to the ground truth key bits with sigmoid activation
-        self.key_proj = Dense(key_bits, activation='sigmoid')
+        self.key_proj = Dense(self.key_bits, activation='sigmoid')
+        super().build(input_shape)
 
     def call(self, inputs, training=False):
         """
@@ -249,7 +276,6 @@ class WaveNetKeyGenerator(tf.keras.Model):
         x = self.gap(x)
         # Final projection to generate key
         return  self.key_proj(x)
-
 
 # ==============================================================================
 # 3. Training and Key Generation System
@@ -289,6 +315,10 @@ class KeyGenerationSystem:
             key_bits=y_train.shape[1] if len(y_train.shape) > 1 else 256,
             dropout_rate=0.1
         )
+
+        # Build the model with a known input shape to avoid unknown TensorShape issues
+        self.model.build((None, 170, 1))
+
         self.model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
             loss=tf.keras.losses.BinaryCrossentropy(),
@@ -330,8 +360,8 @@ class KeyGenerationSystem:
 # 4. Main Execution with Error Handling
 # ==============================================================================
 if __name__ == "__main__":
-    DATA_DIR = ""
-    KEY_FILE = ""
+    DATA_DIR = "/Users/lucianomaldonado/ECG-PV-GENERATION-GROUND-KEY/segmented_ecg_data"
+    KEY_FILE = "/Users/lucianomaldonado/ECG-PV-GENERATION-GROUND-KEY/Ground Keys/secrets_random_keys.json"
 
     try:
         # Init the key generation system with data directories and key file
@@ -360,7 +390,7 @@ if __name__ == "__main__":
             segments = person['segments']
 
             # Ensure segments have shape correct (batch, seq_len, 1)
-            if len(segments) == 2:
+            if segments.ndim == 2:
                 segments = segments.reshape(segments.shape[0], segments.shape[1], 1)
 
             #Generate an aggregated key for the person from all its segments

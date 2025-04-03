@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 # -----------------------------
 # Load intra-person distances (flat list)
-with open("", "rb") as f:
+with open("/Users/lucianomaldonado/ECG-PV-GENERATION-GROUND-KEY/VIT/all_intra_distances.pkl", "rb") as f:
     intra_hd = pickle.load(f)
 
 # Compute statistics for intra-person distances
@@ -26,7 +26,7 @@ plt.show()
 
 # 1-----------------------------
 # Load inter-person distances (grouped by person)
-with open("", "rb") as f:
+with open("/Users/lucianomaldonado/ECG-PV-GENERATION-GROUND-KEY/VIT/person_inter_dists.pkl", "rb") as f:
     person_dists = pickle.load(f)
 
 # Convert dictionary to a list ordered by person number:
